@@ -1,0 +1,9 @@
+/target
+/dist
+
+# installed bundle + backups created by the installer itself
+/bgscan/
+/bgscan_*/
+
+# downloaded by scripts/build.sh for android targets
+/android-ndk-*/
