@@ -1,0 +1,137 @@
+name: Multi-Platform Build & Release Pipeline
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. v1.0)"
+        required: true
+        default: "v1.0"
+      prerelease:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# ==============================================================================
+jobs:
+  # ==============================================================================
+  # JOB 1: RESOLVE TAG
+  # ==============================================================================
+  context:
+    name: Resolve Release Context
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ctx.outputs.tag }}
+      prerelease: ${{ steps.ctx.outputs.prerelease }}
+    steps:
+      - name: Resolve Tag
+        id: ctx
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "prerelease=${{ github.event.inputs.prerelease || 'false' }}" >> $GITHUB_OUTPUT
+
+  # ==============================================================================
+  # JOB 2: BUILD
+  # ==============================================================================
+  build-assets:
+    name: Build ${{ matrix.target }}
+    needs: [context]
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - linux
+          - macos
+          - windows
+          - android
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install zig and cargo-zigbuild
+        if: matrix.target != 'android'
+        run: |
+          pip3 install ziglang
+          cargo install --locked cargo-zigbuild
+
+      - name: Set up Android NDK
+        if: matrix.target == 'android'
+        run: |
+          NDK_VERSION=r27d
+          wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          unzip -q "android-ndk-${NDK_VERSION}-linux.zip"
+          rm "android-ndk-${NDK_VERSION}-linux.zip"
+          echo "$PWD/android-ndk-${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Make build script executable
+        run: chmod +x ./scripts/build.sh
+
+      - name: Run build
+        run: ./scripts/build.sh "${{ matrix.target }}" "${{ needs.context.outputs.tag }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgscan-${{ matrix.target }}
+          path: dist/
+          retention-days: 1
+
+  # ==============================================================================
+  # JOB 3: RELEASE PACKAGE
+  # ==============================================================================
+  publish-release:
+    name: Publish GitHub Release
+    needs: [context, build-assets]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Create dist folder
+        run: mkdir -p dist
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Prepare release script
+        run: ls dist/ && chmod +x ./scripts/release.sh
+
+      - name: Generate release metadata
+        run: ./scripts/release.sh "${{ needs.context.outputs.tag }}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.context.outputs.tag }}
+          name: "bgscan-installer ${{ needs.context.outputs.tag }}"
+          prerelease: ${{ needs.context.outputs.prerelease }}
+          files: |
+            dist/*
+            release/checksum.txt
+          body_path: release/release_notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
