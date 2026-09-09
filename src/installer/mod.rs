@@ -23,6 +23,8 @@ use files::{copy_dir_contents, copy_dir_contents_skip_existing, find_binary, mak
 use github::{checksum_url_for, download_url, resolve_version};
 use platform::PlatformInfo;
 
+const TOTAL_STEPS: usize = 5;
+
 pub struct Installer {
     info: PlatformInfo,
     has_installation: bool,
@@ -58,6 +60,7 @@ impl Installer {
             installation_dir,
         }
     }
+
     pub fn current() -> Result<Self, Box<dyn Error>> {
         Ok(Self::new(PlatformInfo::current()?))
     }
@@ -71,7 +74,6 @@ impl Installer {
         })?;
 
         let mut tui = TerminalUI::new(io::stdout());
-        tui.set_padding(2);
         let mut is_update = false;
 
         tui.title("System");
@@ -80,12 +82,11 @@ impl Installer {
             ("Architecture", &self.info.arch.to_string()),
             ("Platform", &self.info.to_string()),
         ]);
-        tui.success("System ready");
 
         if self.has_installation {
             tui.raw("\n");
             tui.warn(&format!(
-                "Existing bgscan installation found at {}",
+                "Existing installation found at {}",
                 self.installation_dir.display()
             ));
 
@@ -105,26 +106,20 @@ impl Installer {
                     is_update = true;
                 }
                 2 => {
-                    tui.title("Clean install");
-                    tui.muted(&format!("Removing {}", self.installation_dir.display()));
+                    tui.step(1, TOTAL_STEPS, "Removing old installation");
                     fs::remove_dir_all(&self.installation_dir)?;
                     tui.success("Old installation removed");
                 }
                 3 => {
-                    tui.title("Backup");
+                    tui.step(1, TOTAL_STEPS, "Backing up existing installation");
                     let parent = self
                         .installation_dir
                         .parent()
                         .unwrap_or(&self.installation_dir)
                         .to_path_buf();
                     let backup = parent.join(format!("bgscan_{}", timestamp()));
-                    tui.muted(&format!(
-                        "Moving {} -> {}",
-                        self.installation_dir.display(),
-                        backup.display()
-                    ));
                     fs::rename(&self.installation_dir, &backup)?;
-                    tui.success(&format!("Backup saved as {}", backup.display()));
+                    tui.success(&format!("Backed up to {}", backup.display()));
                 }
                 _ => {
                     tui.info("Cancelled. Nothing was changed.");
@@ -133,73 +128,52 @@ impl Installer {
             }
         }
 
-        tui.raw("\n");
-        tui.muted(&format!("Looking up version '{version}'..."));
-
-        tui.title("Release");
+        tui.step(2, TOTAL_STEPS, &format!("Resolving version '{version}'"));
         let resolved = resolve_version(version)?;
         let url = download_url(&self.info, &resolved)
             .ok_or_else(|| UnsupportedPlatformError(format!("no asset for {}", self.info)))?;
+        tui.success(&format!("Using bgscan {resolved} ({asset})"));
 
-        tui.table(&[("Version", &resolved), ("Asset", asset)]);
-        tui.success("Release found");
-
-        tui.title("Download");
+        tui.step(3, TOTAL_STEPS, "Downloading and verifying");
         let tmp = Builder::new().prefix("bgscan_").tempdir()?;
         let zip_path = tmp.path().join(asset);
-
-        tui.muted(&format!("Downloading {asset}..."));
         download_file(&url, &zip_path)?;
-        tui.success(&format!("Downloaded to {}", zip_path.display()));
 
-        tui.title("Verify");
         let checksum_url = checksum_url_for(&resolved);
         let checksum_path = tmp.path().join(CHECKSUM_FILE);
-
-        tui.muted(&format!("Downloading {CHECKSUM_FILE}..."));
         download_file(&checksum_url, &checksum_path)?;
 
-        tui.muted(&format!("Checking sha256 of {asset}..."));
         let expected = parse_checksum_file(&checksum_path, asset)?;
         verify_sha256(&zip_path, &expected)?;
-        tui.success("Checksum verified");
+        tui.success("Downloaded and checksum verified");
 
-        tui.title("Extract");
+        tui.step(4, TOTAL_STEPS, "Extracting archive");
         let extracted = tmp.path().join("extracted");
-        tui.muted(&format!("Extracting {asset}..."));
         unzip(&zip_path, &extracted)?;
 
         let binary_name = self.info.binary_name();
         let binary_src = find_binary(&extracted, binary_name)
             .ok_or_else(|| format!("'{binary_name}' not found inside {asset}"))?;
+        tui.success("Archive extracted");
 
-        if is_update {
-            tui.title("Update");
+        let installed_path = if is_update {
+            tui.step(5, TOTAL_STEPS, "Updating installation");
             fs::create_dir_all(&self.installation_dir)?;
 
             let source_root = binary_src.parent().unwrap();
-            tui.muted(&format!(
-                "Updating into {}",
-                self.installation_dir.display()
-            ));
-
             // Keep existing ips/assets/settings, only replace the binary
             // and add files that are missing.
             copy_dir_contents_skip_existing(source_root, &self.installation_dir)?;
             let dest_bin = self.installation_dir.join(binary_name);
             fs::copy(&binary_src, &dest_bin)?;
             make_executable(&dest_bin)?;
-            tui.success(&format!("Updated {}", dest_bin.display()));
+            tui.success("Installation updated");
+            dest_bin
         } else {
-            tui.title("Install");
+            tui.step(5, TOTAL_STEPS, "Installing");
             fs::create_dir_all(&self.installation_dir)?;
 
             let source_root = binary_src.parent().unwrap();
-            tui.muted(&format!(
-                "Installing into {}",
-                self.installation_dir.display()
-            ));
-
             copy_dir_contents(source_root, &self.installation_dir)?;
 
             let relative = binary_src
@@ -207,19 +181,24 @@ impl Installer {
                 .unwrap_or(Path::new(binary_name));
             let installed = self.installation_dir.join(relative);
             make_executable(&installed)?;
-            tui.success(&format!("Installed {}", installed.display()));
-        }
+            tui.success("Installation complete");
+            installed
+        };
 
-        tui.raw("\n");
-        tui.success(&format!(
-            "bgscan {} is ready. Run\n cd {} \n ./{} \nto start.",
-            resolved,
-            self.installation_dir
-                .strip_prefix(env::current_dir().unwrap_or_default())
-                .unwrap_or(&self.installation_dir)
-                .display(),
-            binary_name
-        ));
+        let relative_dir = self
+            .installation_dir
+            .strip_prefix(env::current_dir().unwrap_or_default())
+            .unwrap_or(&self.installation_dir);
+
+        tui.title(&format!("bgscan {resolved} is ready"));
+        tui.table(&[
+            ("Location", &installed_path.display().to_string()),
+            (
+                "Run",
+                &format!("cd {} && ./{}", relative_dir.display(), binary_name),
+            ),
+        ]);
+
         Ok(())
     }
 }
