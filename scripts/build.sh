@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
-
-# ==============================================================================
-# bgscan-installer release script
-# ------------------------------------------------------------------------------
-# Cross-compiles bgscan-installer for multiple OS/ARCH targets.
+# Cross-compile bgscan-installer for release. CI only.
 #
-# CI ONLY - not intended for end users.
+# Usage: ./scripts/build.sh {linux|macos|windows|android|all} [version]
 #
-# OUTPUT:
-#   dist/bgscan-installer-<target>
+# Linux/macOS/Windows targets go through cargo-zigbuild (zig does the C
+# compilation). Android needs the NDK since zig dropped bionic headers.
 #
-# TARGETS:
-#   linux   - static musl binaries via cargo-zigbuild
-#   macos   - cross-compiled via cargo-zigbuild (no SDK needed)
-#   windows - cross-compiled via cargo-zigbuild
-#   android - needs the Android NDK (see setup_android_ndk)
-#
-# REQUIREMENTS:
-#   - Rust toolchain + cargo-zigbuild (cargo install cargo-zigbuild)
-#   - zig on PATH (pip install ziglang or from ziglang.org)
-#   - rustup targets added, e.g.:
-#       rustup target add aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf \
-#         i686-unknown-linux-musl x86_64-pc-windows-gnu aarch64-pc-windows-gnullvm \
-#         x86_64-apple-darwin aarch64-apple-darwin \
-#         aarch64-linux-android armv7-linux-androideabi \
-#         i686-linux-android x86_64-linux-android
-# ==============================================================================
+# Binaries land in dist/.
 
 set -euo pipefail
 
@@ -63,9 +44,6 @@ build() {
   chmod +x "$DIST_DIR/$name"
 }
 
-# ==============================================================================
-# ANDROID NDK SETUP (CI ONLY)
-# ==============================================================================
 setup_android_ndk() {
   NDK_VERSION="r27d"
   NDK_DIR="$ROOT_DIR/android-ndk-$NDK_VERSION"

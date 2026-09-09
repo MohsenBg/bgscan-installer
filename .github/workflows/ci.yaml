@@ -29,6 +29,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
+        # treat warnings as errors so they don't pile up
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run tests

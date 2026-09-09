@@ -1,3 +1,6 @@
+# Builds every platform on tag pushes (or manually) and publishes a
+# GitHub release with the binaries and checksums.
+
 name: Multi-Platform Build & Release Pipeline
 
 on:
@@ -17,11 +20,8 @@ on:
 permissions:
   contents: write
 
-# ==============================================================================
 jobs:
-  # ==============================================================================
-  # JOB 1: RESOLVE TAG
-  # ==============================================================================
+  # figure out the tag, from the push or the manual input
   context:
     name: Resolve Release Context
     runs-on: ubuntu-latest
@@ -41,9 +41,7 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "prerelease=${{ github.event.inputs.prerelease || 'false' }}" >> $GITHUB_OUTPUT
 
-  # ==============================================================================
-  # JOB 2: BUILD
-  # ==============================================================================
+  # one job per platform group, each runs scripts/build.sh
   build-assets:
     name: Build ${{ matrix.target }}
     needs: [context]
@@ -73,6 +71,7 @@ jobs:
 
       - name: Set up Android NDK
         if: matrix.target == 'android'
+        # zig no longer ships bionic headers, so android builds need the real NDK
         run: |
           NDK_VERSION=r27d
           wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
@@ -96,9 +95,7 @@ jobs:
           path: dist/
           retention-days: 1
 
-  # ==============================================================================
-  # JOB 3: RELEASE PACKAGE
-  # ==============================================================================
+  # collect the artifacts and publish
   publish-release:
     name: Publish GitHub Release
     needs: [context, build-assets]

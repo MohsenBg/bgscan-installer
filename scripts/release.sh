@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# bgscan-installer release generator (CI/CD ONLY)
-# ------------------------------------------------------------------------------
-# ⚠️ IMPORTANT:
-# This script is designed ONLY for GitHub Actions (CI pipeline).
-# It is NOT intended for manual/local execution.
+# Builds the GitHub release files from whatever ./dist contains:
+# a sha256 manifest and markdown release notes.
 #
-# PURPOSE:
-#   - Reads compiled binaries from ./dist
-#   - Generates SHA256 checksum manifest
-#   - Builds GitHub Release markdown (release_notes.md)
-#   - Normalizes platform + architecture names
-#
-# OUTPUT:
-#   ./release/
-#     ├── checksum.txt
-#     └── release_notes.md
-#
-# INPUT:
-#   $1 -> release tag (e.g. v1.0.0)
-# ==============================================================================
+# Usage: ./scripts/release.sh <tag>   (expects GITHUB_REPOSITORY in CI,
+# falls back to user/repo otherwise)
 
 set -euo pipefail
 
-# ==============================================================================
-# INPUT VALIDATION
-# ==============================================================================
 if [[ -z "${1:-}" ]]; then
   echo "Usage: $0 <tag_version>"
   exit 1
@@ -44,9 +25,6 @@ REPO_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-user/rep
 
 mkdir -p "$RELEASE_DIR"
 
-# ==============================================================================
-# LOGGER
-# ==============================================================================
 log() {
   echo
   echo "============================================================"
@@ -54,9 +32,7 @@ log() {
   echo "============================================================"
 }
 
-# ==============================================================================
-# PLATFORM + ARCH DISPLAY MAPS
-# ==============================================================================
+# display names for the release notes table
 declare -A OS_MAP=(
   ["linux"]="🐧 Linux"
   ["windows"]="🪟 Windows"
@@ -82,9 +58,6 @@ declare -A ARCH_MAP=(
   ["macos-arm64"]="ARM64 / Apple Silicon"
 )
 
-# ==============================================================================
-# VALIDATE DIST DIRECTORY
-# ==============================================================================
 log "Validating dist/ directory"
 
 if [[ ! -d "$DIST_DIR" ]] || [[ -z "$(ls -A "$DIST_DIR" 2>/dev/null)" ]]; then
@@ -92,9 +65,6 @@ if [[ ! -d "$DIST_DIR" ]] || [[ -z "$(ls -A "$DIST_DIR" 2>/dev/null)" ]]; then
   exit 1
 fi
 
-# ==============================================================================
-# CHECKSUM GENERATION
-# ==============================================================================
 log "Generating SHA256 checksums"
 
 : >"$CHECKSUM_FILE"
@@ -110,9 +80,6 @@ for file in *; do
   FILES+=("$file")
 done
 
-# ==============================================================================
-# RELEASE NOTES GENERATION
-# ==============================================================================
 log "Generating release notes"
 
 : >"$NOTES_FILE"
@@ -132,9 +99,7 @@ All binaries are **raw executables (no compression)**.
 |------------|----------------|------------|
 EOF
 
-# ==============================================================================
-# TABLE GENERATION (SMART PARSER FOR YOUR NAMING STYLE)
-# ==============================================================================
+# figure out platform/arch from the file name
 for file in "${FILES[@]}"; do
 
   # normalize windows extension
@@ -158,9 +123,6 @@ for file in "${FILES[@]}"; do
 
 done
 
-# ==============================================================================
-# CHECKSUM TABLE
-# ==============================================================================
 cat <<EOF >>"$NOTES_FILE"
 
 ---
@@ -175,9 +137,6 @@ while read -r hash file; do
   echo "| $file | $hash |" >>"$NOTES_FILE"
 done <"$CHECKSUM_FILE"
 
-# ==============================================================================
-# FOOTER
-# ==============================================================================
 cat <<EOF >>"$NOTES_FILE"
 
 ---
@@ -189,9 +148,6 @@ cat <<EOF >>"$NOTES_FILE"
 - Pipeline: GitHub Actions CI/CD
 EOF
 
-# ==============================================================================
-# DONE
-# ==============================================================================
 log "Release generation completed"
 echo "Output directory: $RELEASE_DIR"
 ls -lh "$RELEASE_DIR"
