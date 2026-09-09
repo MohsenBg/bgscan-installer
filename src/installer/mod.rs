@@ -71,6 +71,7 @@ impl Installer {
         })?;
 
         let mut tui = TerminalUI::new(io::stdout());
+        tui.set_padding(2);
         let mut is_update = false;
 
         tui.title("System");

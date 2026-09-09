@@ -28,11 +28,21 @@ pub trait UI {
 
 pub struct TerminalUI<W: Write> {
     out: W,
+    padding: usize,
 }
 
 impl<W: Write> TerminalUI<W> {
     pub fn new(out: W) -> Self {
-        Self { out }
+        Self { out, padding: 2 }
+    }
+
+    /// Left padding applied to every output line.
+    pub fn set_padding(&mut self, padding: usize) {
+        self.padding = padding;
+    }
+
+    fn pad(&mut self) {
+        write!(self.out, "{:width$}", "", width = self.padding).unwrap();
     }
 
     pub fn menu(
@@ -40,12 +50,15 @@ impl<W: Write> TerminalUI<W> {
         title: &str,
         options: &[&str],
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        writeln!(self.out, "\n{}", title).unwrap();
+        self.title(title);
         for (i, opt) in options.iter().enumerate() {
-            writeln!(self.out, "   [{}] {}", i + 1, opt).unwrap();
+            self.pad();
+            writeln!(self.out, "[{}] {}", i + 1, opt).unwrap();
         }
-        writeln!(self.out, "   [{}] Cancel", options.len() + 1).unwrap();
-        write!(self.out, "   Choice: ").unwrap();
+        self.pad();
+        writeln!(self.out, "[{}] Cancel", options.len() + 1).unwrap();
+        self.pad();
+        write!(self.out, "Choice: ").unwrap();
         self.out.flush().unwrap();
 
         let mut input = String::new();
@@ -75,45 +88,56 @@ impl<W: Write> UI for TerminalUI<W> {
         ];
 
         for line in BRAND_ART {
+            self.pad();
             writeln!(self.out, "{}", line.style(CYAN)).unwrap();
         }
     }
 
     fn divider(&mut self) {
+        self.pad();
         writeln!(self.out, "{}", "─".repeat(DIVIDER_WIDTH)).unwrap();
     }
 
     fn title(&mut self, message: &str) {
-        writeln!(self.out, "\n{}", message.style(TITLE_STYLE)).unwrap();
+        writeln!(self.out).unwrap();
+        self.pad();
+        writeln!(self.out, "{}", message.style(TITLE_STYLE)).unwrap();
     }
 
     fn error(&mut self, message: &str) {
+        self.pad();
         writeln!(self.out, "{} {}", "✗".style(RED), message).unwrap();
     }
 
     fn info(&mut self, message: &str) {
+        self.pad();
         writeln!(self.out, "{} {}", "→".style(CYAN), message).unwrap();
     }
 
     fn warn(&mut self, message: &str) {
+        self.pad();
         writeln!(self.out, "{} {}", "⚠".style(YELLOW), message).unwrap();
     }
 
     fn success(&mut self, message: &str) {
+        self.pad();
         writeln!(self.out, "{} {}", "✓".style(GREEN), message).unwrap();
     }
 
     fn muted(&mut self, message: &str) {
+        self.pad();
         writeln!(self.out, "{}", message.style(DIM)).unwrap();
     }
 
     fn table(&mut self, rows: &[(&str, &str)]) {
         for (key, value) in rows {
+            self.pad();
             writeln!(self.out, "{:<TABLE_KEY_WIDTH$} {}", key.style(DIM), value).unwrap();
         }
     }
 
     fn raw(&mut self, message: &str) {
+        self.pad();
         write!(self.out, "{}", message).unwrap();
     }
 }
@@ -138,7 +162,28 @@ mod tests {
     fn divider_prints_expected_width() {
         let output = output(|ui| ui.divider());
 
-        assert_eq!(output, format!("{}\n", "─".repeat(DIVIDER_WIDTH)));
+        assert_eq!(output, format!("  {}\n", "─".repeat(DIVIDER_WIDTH)));
+    }
+
+    #[test]
+    fn padding_can_be_changed() {
+        let mut buffer = Vec::new();
+        {
+            let mut ui = TerminalUI::new(&mut buffer);
+            ui.set_padding(0);
+            ui.success("Downloaded");
+            ui.set_padding(4);
+            ui.success("again");
+        }
+
+        let output = String::from_utf8(buffer).unwrap();
+        // padding is plain spaces before the (possibly ANSI-styled) line
+        let lead = |line: &str| line.len() - line.trim_start().len();
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lead(lines[0]), 0);
+        assert!(lines[0].contains("Downloaded"));
+        assert_eq!(lead(lines[1]), 4);
+        assert!(lines[1].contains("again"));
     }
 
     #[test]
