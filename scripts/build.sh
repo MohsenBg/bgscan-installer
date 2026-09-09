@@ -3,10 +3,11 @@
 #
 # Usage: ./scripts/build.sh {linux|macos|windows|android|all} [version]
 #
-# Linux/macOS/Windows targets go through cargo-zigbuild (zig does the C
-# compilation). Android needs the NDK since zig dropped bionic headers.
+# Linux, macOS, and Windows use cargo-zigbuild.
+# macOS also requires an Apple SDK (see setup_macos_sdk).
+# Android uses the Android NDK with plain cargo build (see setup_android_ndk).
 #
-# Binaries land in dist/.
+# Binaries are written to dist/.
 
 set -euo pipefail
 
@@ -35,7 +36,13 @@ build() {
 
   rustup target add "$rust_target"
 
-  APP_VERSION="$VERSION" cargo zigbuild --release --target "$rust_target"
+  # android links against the real NDK
+  # installed for the other targets, so don't call it here
+  if [[ "$rust_target" == *-linux-android* || "$rust_target" == *-androideabi ]]; then
+    APP_VERSION="$VERSION" cargo build --release --target "$rust_target"
+  else
+    APP_VERSION="$VERSION" cargo zigbuild --release --target "$rust_target"
+  fi
 
   local out="target/$rust_target/release/$BIN_NAME"
   [ -f "$out.exe" ] && out="$out.exe"
@@ -76,28 +83,49 @@ setup_android_ndk() {
   export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
 }
 
+# Zig doesn't ship Apple's frameworks (Security, CoreFoundation, etc),
+# so cross-linking needs a real macOS SDK on disk with SDKROOT pointed
+# at it. Pin a version so builds stay reproducible.
+setup_macos_sdk() {
+  local sdk_version="13.3"
+  local sdk_dir="$ROOT_DIR/MacOSX${sdk_version}.sdk"
+
+  log "MACOS: setting up SDK"
+
+  if [ ! -d "$sdk_dir" ]; then
+    wget -q "https://github.com/joseluisq/macosx-sdks/releases/download/${sdk_version}/MacOSX${sdk_version}.sdk.tar.xz" \
+      -O "$ROOT_DIR/macos-sdk.tar.xz"
+    tar -xf "$ROOT_DIR/macos-sdk.tar.xz" -C "$ROOT_DIR"
+    rm -f "$ROOT_DIR/macos-sdk.tar.xz"
+  fi
+
+  export SDKROOT="$sdk_dir"
+}
+
 case "$TARGET" in
 
 linux)
   log "TARGET: LINUX"
 
-  build x86_64-unknown-linux-musl      linux-64
-  build i686-unknown-linux-musl        linux-32
-  build aarch64-unknown-linux-musl     linux-arm64
+  build x86_64-unknown-linux-musl linux-64
+  build i686-unknown-linux-musl linux-32
+  build aarch64-unknown-linux-musl linux-arm64
   build armv7-unknown-linux-musleabihf linux-arm32-v7a
   ;;
 
 macos)
   log "TARGET: MACOS"
 
-  build x86_64-apple-darwin  macos-64
+  setup_macos_sdk
+
+  build x86_64-apple-darwin macos-64
   build aarch64-apple-darwin macos-arm64
   ;;
 
 windows)
   log "TARGET: WINDOWS"
 
-  build x86_64-pc-windows-gnu      windows-64.exe
+  build x86_64-pc-windows-gnu windows-64.exe
   build aarch64-pc-windows-gnullvm windows-arm64.exe
   ;;
 
@@ -106,10 +134,10 @@ android)
 
   setup_android_ndk
 
-  build aarch64-linux-android   android-arm64-v8a
+  build aarch64-linux-android android-arm64-v8a
   build armv7-linux-androideabi android-armeabi-v7a
-  build i686-linux-android      android-x86
-  build x86_64-linux-android    android-x86_64
+  build i686-linux-android android-x86
+  build x86_64-linux-android android-x86_64
   ;;
 
 all)
