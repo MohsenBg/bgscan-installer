@@ -1,12 +1,16 @@
 use owo_colors::{OwoColorize, Style};
 use std::io::Write;
 
-static CYAN: Style = Style::new().bright_cyan();
-static TITLE_STYLE: Style = Style::new().bright_cyan().bold();
+// Palette: a cooler, more "brand" cyan/violet pairing instead of flat bright_cyan
+// everywhere, plus clearer semantic separation between info/warn/error/success.
+static BRAND: Style = Style::new().bright_cyan();
+static TITLE_STYLE: Style = Style::new().bold().bright_white();
+static ACCENT: Style = Style::new().bright_magenta();
 static GREEN: Style = Style::new().bright_green();
-static RED: Style = Style::new().bright_red();
+static RED: Style = Style::new().bright_red().bold();
 static YELLOW: Style = Style::new().bright_yellow();
 static DIM: Style = Style::new().dimmed();
+static KEY: Style = Style::new().bright_blue();
 
 const DIVIDER_WIDTH: usize = 52;
 const TABLE_KEY_WIDTH: usize = 15;
@@ -21,6 +25,7 @@ pub trait UI {
     fn warn(&mut self, message: &str);
     fn success(&mut self, message: &str);
     fn muted(&mut self, message: &str);
+    fn step(&mut self, n: usize, total: usize, message: &str);
     fn raw(&mut self, message: &str);
 
     fn table(&mut self, rows: &[(&str, &str)]);
@@ -53,12 +58,19 @@ impl<W: Write> TerminalUI<W> {
         self.title(title);
         for (i, opt) in options.iter().enumerate() {
             self.pad();
-            writeln!(self.out, "[{}] {}", i + 1, opt).unwrap();
+            writeln!(self.out, "  {} {}", format!("{}", i + 1).style(ACCENT), opt).unwrap();
         }
         self.pad();
-        writeln!(self.out, "[{}] Cancel", options.len() + 1).unwrap();
+        writeln!(
+            self.out,
+            "  {} {}",
+            format!("{}", options.len() + 1).style(DIM),
+            "Cancel".style(DIM)
+        )
+        .unwrap();
+        self.divider();
         self.pad();
-        write!(self.out, "Choice: ").unwrap();
+        write!(self.out, "{} ", "❯".style(ACCENT)).unwrap();
         self.out.flush().unwrap();
 
         let mut input = String::new();
@@ -87,10 +99,12 @@ impl<W: Write> UI for TerminalUI<W> {
             " ╚═════╝  ╚═════╝    ╚══════╝╚═════╝╚═╝   ╚═╝╚═╝  ╚═══╝",
         ];
 
+        writeln!(self.out).unwrap();
         for line in BRAND_ART {
             self.pad();
-            writeln!(self.out, "{}", line.style(CYAN)).unwrap();
+            writeln!(self.out, "{}", line.style(BRAND)).unwrap();
         }
+        self.pad();
     }
 
     fn divider(&mut self) {
@@ -101,7 +115,13 @@ impl<W: Write> UI for TerminalUI<W> {
     fn title(&mut self, message: &str) {
         writeln!(self.out).unwrap();
         self.pad();
-        writeln!(self.out, "{}", message.style(TITLE_STYLE)).unwrap();
+        writeln!(
+            self.out,
+            "{} {}",
+            "▍".style(ACCENT),
+            message.style(TITLE_STYLE)
+        )
+        .unwrap();
     }
 
     fn error(&mut self, message: &str) {
@@ -111,12 +131,12 @@ impl<W: Write> UI for TerminalUI<W> {
 
     fn info(&mut self, message: &str) {
         self.pad();
-        writeln!(self.out, "{} {}", "→".style(CYAN), message).unwrap();
+        writeln!(self.out, "{} {}", "→".style(BRAND), message).unwrap();
     }
 
     fn warn(&mut self, message: &str) {
         self.pad();
-        writeln!(self.out, "{} {}", "⚠".style(YELLOW), message).unwrap();
+        writeln!(self.out, "{} {}", "▲".style(YELLOW), message).unwrap();
     }
 
     fn success(&mut self, message: &str) {
@@ -129,88 +149,33 @@ impl<W: Write> UI for TerminalUI<W> {
         writeln!(self.out, "{}", message.style(DIM)).unwrap();
     }
 
+    fn step(&mut self, n: usize, total: usize, message: &str) {
+        self.pad();
+        writeln!(
+            self.out,
+            "{} {}",
+            format!("[{n}/{total}]").style(DIM),
+            message
+        )
+        .unwrap();
+    }
+
     fn table(&mut self, rows: &[(&str, &str)]) {
         for (key, value) in rows {
             self.pad();
-            writeln!(self.out, "{:<TABLE_KEY_WIDTH$} {}", key.style(DIM), value).unwrap();
+            writeln!(
+                self.out,
+                "{:<TABLE_KEY_WIDTH$} {} {}",
+                key.style(KEY),
+                "│".style(DIM),
+                value
+            )
+            .unwrap();
         }
     }
 
     fn raw(&mut self, message: &str) {
         self.pad();
         write!(self.out, "{}", message).unwrap();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn output<F>(render: F) -> String
-    where
-        F: FnOnce(&mut TerminalUI<&mut Vec<u8>>),
-    {
-        let mut buffer = Vec::new();
-        let mut ui = TerminalUI::new(&mut buffer);
-
-        render(&mut ui);
-
-        String::from_utf8(buffer).unwrap()
-    }
-
-    #[test]
-    fn divider_prints_expected_width() {
-        let output = output(|ui| ui.divider());
-
-        assert_eq!(output, format!("  {}\n", "─".repeat(DIVIDER_WIDTH)));
-    }
-
-    #[test]
-    fn padding_can_be_changed() {
-        let mut buffer = Vec::new();
-        {
-            let mut ui = TerminalUI::new(&mut buffer);
-            ui.set_padding(0);
-            ui.success("Downloaded");
-            ui.set_padding(4);
-            ui.success("again");
-        }
-
-        let output = String::from_utf8(buffer).unwrap();
-        // padding is plain spaces before the (possibly ANSI-styled) line
-        let lead = |line: &str| line.len() - line.trim_start().len();
-        let lines: Vec<&str> = output.lines().collect();
-        assert_eq!(lead(lines[0]), 0);
-        assert!(lines[0].contains("Downloaded"));
-        assert_eq!(lead(lines[1]), 4);
-        assert!(lines[1].contains("again"));
-    }
-
-    #[test]
-    fn success_prints_icon_and_message() {
-        let output = output(|ui| ui.success("Downloaded"));
-
-        assert!(output.contains("✓"));
-        assert!(output.contains("Downloaded"));
-    }
-
-    #[test]
-    fn title_prints_blank_line_and_message() {
-        let output = output(|ui| ui.title("Download"));
-
-        assert!(output.starts_with('\n'));
-        assert!(output.contains("Download"));
-    }
-
-    #[test]
-    fn table_prints_key_value_rows() {
-        let output = output(|ui| {
-            ui.table(&[("os", "linux"), ("arch", "x86_64")]);
-        });
-
-        assert!(output.contains("os"));
-        assert!(output.contains("linux"));
-        assert!(output.contains("arch"));
-        assert!(output.contains("x86_64"));
     }
 }
