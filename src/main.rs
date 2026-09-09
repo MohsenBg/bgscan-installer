@@ -37,6 +37,7 @@ pub const VERSION: &str = match option_env!("APP_VERSION") {
 fn main() {
     let cli = Cli::parse();
     let mut tui = TerminalUI::new(std::io::stdout());
+    tui.set_padding(2);
 
     match cli.command {
         Commands::Version => {
@@ -45,7 +46,7 @@ fn main() {
         Commands::Install { version } => {
             tui.raw("\n");
             tui.brand();
-            tui.muted(format!(" bgscan-installer • v{}", VERSION).as_str());
+            tui.muted(format!("bgscan-installer • v{}", VERSION).as_str());
             tui.divider();
 
             if let Err(e) = run_install(&version) {
