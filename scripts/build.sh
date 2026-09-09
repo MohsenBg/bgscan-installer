@@ -47,8 +47,9 @@ build() {
   local out="target/$rust_target/release/$BIN_NAME"
   [ -f "$out.exe" ] && out="$out.exe"
 
-  cp "$out" "$DIST_DIR/$name"
-  chmod +x "$DIST_DIR/$name"
+  local dest="$DIST_DIR/$BIN_NAME-$name"
+  cp "$out" "$dest"
+  chmod +x "$dest"
 }
 
 setup_android_ndk() {
