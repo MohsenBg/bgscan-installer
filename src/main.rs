@@ -1,6 +1,7 @@
 mod archive;
 mod downloader;
 mod installer;
+mod net;
 mod progress;
 mod ui;
 

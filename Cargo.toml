@@ -12,6 +12,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 clap = { version = "4.6.6", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.11"
+webpki-root-certs = "1.0.9"
 
 [profile.release]
 opt-level = "z"

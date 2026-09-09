@@ -104,6 +104,7 @@ dependencies = [
  "serde",
  "sha2",
  "tempfile",
+ "webpki-root-certs",
  "zip",
 ]
 

@@ -1,8 +1,7 @@
-use reqwest::blocking::Client;
+use super::platform::PlatformInfo;
+use crate::net::build_client;
 use serde::Deserialize;
 use std::error::Error;
-
-use super::platform::PlatformInfo;
 
 pub const GITHUB_OWNER_REPO: &str = "MohsenBg/bgscan";
 
@@ -48,13 +47,9 @@ pub fn checksum_url_for(resolved_version: &str) -> String {
     format!("{}checksum.txt", release_base_url(resolved_version))
 }
 
-fn github_client() -> Result<Client, Box<dyn Error>> {
-    Ok(Client::builder().user_agent("bgscan-installer").build()?)
-}
-
 /// Fetches the real tag behind `latest` (e.g. `v2.10.0`).
 fn latest_version() -> Result<String, Box<dyn Error>> {
-    let release: Release = github_client()?
+    let release: Release = build_client("bgscan-installer")?
         .get(format!(
             "https://api.github.com/repos/{GITHUB_OWNER_REPO}/releases/latest"
         ))
@@ -70,7 +65,7 @@ fn verify_version_exists(version: &str) -> Result<String, Box<dyn Error>> {
     let tag = normalize_tag(version);
     let url = format!("https://api.github.com/repos/{GITHUB_OWNER_REPO}/releases/tags/{tag}");
 
-    let response = github_client()?.get(&url).send()?;
+    let response = build_client("bgscan-installer")?.get(&url).send()?;
 
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(format!(

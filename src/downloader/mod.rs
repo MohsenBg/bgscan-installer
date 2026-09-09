@@ -1,4 +1,3 @@
-use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
@@ -6,10 +5,10 @@ use std::{
     path::Path,
 };
 
-use crate::progress::Progress;
+use crate::{net::build_client, progress::Progress};
 
 pub fn download_file(url: &str, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::builder().build()?;
+    let client = build_client("bgscan-installer")?;
 
     let mut response = client.get(url).send()?;
 
