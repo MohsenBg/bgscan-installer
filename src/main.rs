@@ -46,7 +46,7 @@ fn main() {
         Commands::Install { version } => {
             tui.raw("\n");
             tui.brand();
-            tui.muted(format!("bgscan-installer • v{}", VERSION).as_str());
+            tui.muted(format!("bgscan-installer • {}", VERSION).as_str());
             tui.divider();
 
             if let Err(e) = run_install(&version) {
